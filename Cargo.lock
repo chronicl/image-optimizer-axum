@@ -463,7 +463,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "image-server"
+name = "image-optimizer"
 version = "0.1.0"
 dependencies = [
  "axum",

@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, Query},
-    http::{header, HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::get,
     Router,
@@ -36,7 +36,16 @@ impl ImageOptimizer {
             debug!("image {image} requested");
 
             let mut headers = HeaderMap::new();
-            headers.insert(header::CONTENT_TYPE, "image/webp".parse().unwrap());
+            if resize.webp.unwrap_or(false) {
+                headers.insert(header::CONTENT_TYPE, "image/webp".parse().unwrap());
+            } else {
+                let image_type = image.split('.').last().unwrap_or("jpg");
+                headers.insert(
+                    header::CONTENT_TYPE,
+                    format!("image/{image_type}").parse().unwrap(),
+                );
+            }
+
             (headers, image_server.get_image(&image, &resize))
         };
 
