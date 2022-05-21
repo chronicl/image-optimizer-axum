@@ -1,5 +1,5 @@
 use axum::Router;
-use image_server::ImageOptimizer;
+use image_optimizer::ImageOptimizer;
 use std::net::SocketAddr;
 
 // Very important to run with --release flag: cargo run --release --example basic.
