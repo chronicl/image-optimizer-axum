@@ -8,6 +8,7 @@ use axum::{
 use image::{imageops::FilterType, io::Reader, ImageError};
 use serde::Deserialize;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Instant};
+use tracing::debug;
 
 /// Currently only webp images are being served. Default quality is webp quality is 85.
 #[derive(Clone, Debug)]
@@ -19,8 +20,11 @@ pub struct ImageOptimizer {
 
 impl ImageOptimizer {
     pub fn new<P: AsRef<std::path::Path>>(dir: P) -> Result<Self, std::io::Error> {
+        let dir = dir.as_ref().to_owned();
+        debug!("serving images from {dir:?}");
+
         Ok(Self {
-            dir: dir.as_ref().to_owned(),
+            dir,
             cache: Arc::new(dashmap::DashMap::new()),
         })
     }
@@ -28,6 +32,9 @@ impl ImageOptimizer {
     pub fn router(self) -> Router {
         let f = |Path(image): Path<String>, Query(resize): Query<Resize>| async move {
             let image_server = self;
+
+            debug!("image {image} requested");
+
             let mut headers = HeaderMap::new();
             headers.insert(header::CONTENT_TYPE, "image/webp".parse().unwrap());
             (headers, image_server.get_image(&image, &resize))
@@ -67,14 +74,20 @@ impl ImageOptimizer {
                 );
             }
 
-            // Todo: Consider other formats, like avif
-            // Todo: Handle error better
-            let im = webp::Encoder::from_image(&im)
-                .map_err(|_| ImageNotFound)?
-                .encode(resize.quality.unwrap_or(85) as f32);
+            if resize.webp.unwrap_or(false) {
+                // Todo: Consider other formats, like avif
+                // Todo: Handle error better
+                let im = webp::Encoder::from_image(&im)
+                    .map_err(|_| ImageNotFound)?
+                    .encode(resize.quality.unwrap_or(85) as f32);
 
-            self.cache.insert(key(image, resize), im.to_owned());
-            return Ok(im.to_owned());
+                self.cache.insert(key(image, resize), im.to_owned());
+                Ok(im.to_owned())
+            } else {
+                self.cache
+                    .insert(key(image, resize), im.as_bytes().to_owned());
+                Ok(im.as_bytes().to_owned())
+            }
         }
     }
 }
@@ -103,6 +116,7 @@ impl IntoResponse for ImageNotFound {
 
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, PartialOrd, Hash, Eq)]
 struct Resize {
+    webp: Option<bool>,
     quality: Option<u8>,
     width: Option<u16>,
     height: Option<u16>,

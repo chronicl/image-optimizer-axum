@@ -472,6 +472,7 @@ dependencies = [
  "serde",
  "thiserror",
  "tokio",
+ "tracing",
  "webp",
 ]
 
