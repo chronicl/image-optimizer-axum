@@ -1,6 +1,7 @@
-### Image Optimizer for integration with axum
+## Image Optimizer for integration with axum
 
 Provides an axum::Router that serves dynamically optimized images.
+
 Currently all images are converted to webp and cached in RAM.
 
 ```Rust
@@ -12,6 +13,4 @@ axum::Server::bind(&addr)
     .serve(router.into_make_service())
     .await
     .unwrap();
-
-Ok(())
 ```
