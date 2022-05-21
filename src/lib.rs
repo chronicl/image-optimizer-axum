@@ -5,9 +5,9 @@ use axum::{
     routing::get,
     Router,
 };
-use image::{imageops::FilterType, io::Reader, ImageError};
+use image::{imageops::FilterType, io::Reader, ImageError, ImageFormat};
 use serde::Deserialize;
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Instant};
+use std::{collections::HashMap, io::Cursor, net::SocketAddr, sync::Arc, time::Instant};
 use tracing::debug;
 
 /// Currently only webp images are being served. Default quality is webp quality is 85.
@@ -93,9 +93,18 @@ impl ImageOptimizer {
                 self.cache.insert(key(image, resize), im.to_owned());
                 Ok(im.to_owned())
             } else {
+                let mut v = Vec::new();
+                let mut v = Cursor::new(v);
+                let format = match image.split('.').last().unwrap_or("jpg") {
+                    "jpg" => ImageFormat::Jpeg,
+                    "png" => ImageFormat::Png,
+                    "gif" => ImageFormat::Gif,
+                    _ => ImageFormat::Jpeg,
+                };
+                im.write_to(&mut v, format).map_err(|_| ImageNotFound)?;
                 self.cache
-                    .insert(key(image, resize), im.as_bytes().to_owned());
-                Ok(im.as_bytes().to_owned())
+                    .insert(key(image, resize), v.get_ref().to_owned());
+                Ok(v.into_inner())
             }
         }
     }
@@ -138,6 +147,9 @@ struct Resize {
 impl Resize {
     fn to_string(&self) -> String {
         let mut s = String::new();
+        if let Some(_) = self.webp {
+            s.push_str("webp");
+        }
         if let Some(quality) = self.quality {
             s.push_str(&format!("q{}", quality));
         }
