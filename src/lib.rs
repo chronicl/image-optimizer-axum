@@ -1,14 +1,13 @@
 use axum::{
     extract::{Path, Query},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Router,
 };
-use image::{imageops::FilterType, io::Reader, ImageError, ImageFormat};
+use image::{imageops::FilterType, ImageFormat};
 use serde::Deserialize;
-use std::{collections::HashMap, io::Cursor, net::SocketAddr, sync::Arc, time::Instant};
-use tracing::debug;
+use std::{io::Cursor, sync::Arc};
 
 /// Currently only webp images are being served. Default quality is webp quality is 85.
 #[derive(Clone, Debug)]
@@ -21,7 +20,7 @@ pub struct ImageOptimizer {
 impl ImageOptimizer {
     pub fn new<P: AsRef<std::path::Path>>(dir: P) -> Result<Self, std::io::Error> {
         let dir = dir.as_ref().to_owned();
-        debug!("serving images from {dir:?}");
+        tracing::debug!("serving images from {dir:?}");
 
         Ok(Self {
             dir,
@@ -33,7 +32,7 @@ impl ImageOptimizer {
         let f = |Path(image): Path<String>, Query(resize): Query<Resize>| async move {
             let image_server = self;
 
-            debug!("image {image} requested");
+            tracing::debug!("image {image} requested");
 
             let mut headers = HeaderMap::new();
             if resize.webp.unwrap_or(false) {
@@ -45,6 +44,10 @@ impl ImageOptimizer {
                     format!("image/{image_type}").parse().unwrap(),
                 );
             }
+            headers.insert(
+                header::CACHE_CONTROL,
+                "public, max-age=31536000, immutable".parse().unwrap(),
+            );
 
             (headers, image_server.get_image(&image, &resize))
         };
@@ -58,9 +61,7 @@ impl ImageOptimizer {
         } else {
             // Todo: Read with tokio instead of blocking
             // Todo: Handle error better than just ImageNotFound
-            let mut im = Reader::open(self.dir.join(image))?
-                .decode()
-                .map_err(|_| ImageNotFound)?;
+            let mut im = image::open(self.dir.join(image)).map_err(|_| ImageNotFound)?;
 
             if resize.width.is_some() || resize.height.is_some() {
                 im = im.resize(
@@ -93,8 +94,7 @@ impl ImageOptimizer {
                 self.cache.insert(key(image, resize), im.to_owned());
                 Ok(im.to_owned())
             } else {
-                let mut v = Vec::new();
-                let mut v = Cursor::new(v);
+                let mut v = Cursor::new(Vec::new());
                 let format = match image.split('.').last().unwrap_or("jpg") {
                     "jpg" => ImageFormat::Jpeg,
                     "png" => ImageFormat::Png,
