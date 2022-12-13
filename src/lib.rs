@@ -1,10 +1,3 @@
-use axum::{
-    extract::{Path, Query},
-    http::{header, HeaderMap, StatusCode},
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
 use image::{imageops::FilterType, ImageFormat};
 use serde::Deserialize;
 use std::{io::Cursor, sync::Arc};
@@ -18,6 +11,8 @@ pub struct ImageOptimizer {
 }
 
 impl ImageOptimizer {
+    const CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+
     pub fn new<P: AsRef<std::path::Path>>(dir: P) -> Result<Self, std::io::Error> {
         let dir = dir.as_ref().to_owned();
         tracing::debug!("serving images from {dir:?}");
@@ -28,31 +23,67 @@ impl ImageOptimizer {
         })
     }
 
-    pub fn router(self) -> Router {
+    #[cfg(feature = "axum")]
+    pub fn axum_router(self) -> axum::Router {
+        use axum::{
+            extract::{Path, Query},
+            http::{header, HeaderMap, StatusCode},
+            response::IntoResponse,
+            routing::get,
+            Router,
+        };
+
         let f = |Path(image): Path<String>, Query(resize): Query<Resize>| async move {
             let image_server = self;
 
             tracing::debug!("image {image} requested");
 
             let mut headers = HeaderMap::new();
-            if resize.webp.unwrap_or(false) {
-                headers.insert(header::CONTENT_TYPE, "image/webp".parse().unwrap());
-            } else {
-                let image_type = image.split('.').last().unwrap_or("jpg");
-                headers.insert(
-                    header::CONTENT_TYPE,
-                    format!("image/{image_type}").parse().unwrap(),
-                );
-            }
-            headers.insert(
-                header::CACHE_CONTROL,
-                "public, max-age=31536000, immutable".parse().unwrap(),
-            );
+            let content_type = parse_content_type(&resize, &image);
+            headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+            headers.insert(header::CACHE_CONTROL, Self::CACHE_CONTROL.parse().unwrap());
 
             (headers, image_server.get_image(&image, &resize))
         };
 
         Router::new().route("/:image", get(f))
+    }
+
+    #[cfg(feature = "poem")]
+    pub fn poem_router(self) -> poem::Route {
+        use poem::{
+            get, handler,
+            http::StatusCode,
+            web::{Data, Path, Query},
+            EndpointExt, Response, Result, Route,
+        };
+
+        #[handler]
+        fn get_image(
+            image_optimizer: Data<&ImageOptimizer>,
+            resize: Query<Resize>,
+            path: Path<String>,
+        ) -> Result<Response> {
+            let image = path.0;
+            let resize = *resize;
+            let content_type = parse_content_type(&resize, &image);
+
+            tracing::debug!("image {image} requested");
+
+            let bytes = image_optimizer
+                .get_image(&image, &resize)
+                .map_err(|_| http::StatusCode::NOT_FOUND)?;
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", content_type)
+                .header("Cache-Control", ImageOptimizer::CACHE_CONTROL)
+                .body(bytes))
+        }
+
+        let router = Route::new().at("/:image", poem::get(get_image).data(self));
+
+        router
     }
 
     fn get_image(&self, image: &str, resize: &Resize) -> Result<Vec<u8>, ImageNotFound> {
@@ -110,6 +141,25 @@ impl ImageOptimizer {
     }
 }
 
+fn parse_content_type(resize: &Resize, image: &str) -> String {
+    if resize.webp.unwrap_or(false) {
+        "image/webp".into()
+    } else {
+        let image_type = image.split('.').last().unwrap_or("jpg");
+        format!("image/{image_type}")
+    }
+}
+
+#[test]
+
+fn test_poem() {
+    #[cfg(feature = "poem")]
+    {
+        let optimizer = ImageOptimizer::new("./examples/images").unwrap();
+        let router = optimizer.poem_router();
+    }
+}
+
 fn key(image: &str, resize: &Resize) -> String {
     let mut key: String = resize.to_string();
     key.push_str(image);
@@ -126,9 +176,10 @@ impl From<std::io::Error> for ImageNotFound {
     }
 }
 
-impl IntoResponse for ImageNotFound {
+#[cfg(feature = "axum")]
+impl axum::response::IntoResponse for ImageNotFound {
     fn into_response(self) -> axum::response::Response {
-        StatusCode::NOT_FOUND.into_response()
+        axum::http::StatusCode::NOT_FOUND.into_response()
     }
 }
 
