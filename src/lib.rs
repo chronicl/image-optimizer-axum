@@ -86,7 +86,7 @@ impl ImageOptimizer {
         router
     }
 
-    fn get_image(&self, image: &str, resize: &Resize) -> Result<Vec<u8>, ImageNotFound> {
+    pub fn get_image(&self, image: &str, resize: &Resize) -> Result<Vec<u8>, ImageNotFound> {
         if let Some(bytes) = self.cache.get(&key(image, resize)) {
             return Ok(bytes.to_owned());
         } else {
@@ -184,19 +184,19 @@ impl axum::response::IntoResponse for ImageNotFound {
 }
 
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, PartialOrd, Hash, Eq)]
-struct Resize {
-    webp: Option<bool>,
-    quality: Option<u8>,
-    width: Option<u16>,
-    height: Option<u16>,
-    cx: Option<u16>,
-    cy: Option<u16>,
-    cwidth: Option<u16>,
-    cheight: Option<u16>,
+pub struct Resize {
+    pub webp: Option<bool>,
+    pub quality: Option<u8>,
+    pub width: Option<u16>,
+    pub height: Option<u16>,
+    pub cx: Option<u16>,
+    pub cy: Option<u16>,
+    pub cwidth: Option<u16>,
+    pub cheight: Option<u16>,
 }
 
 impl Resize {
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         let mut s = String::new();
         if let Some(_) = self.webp {
             s.push_str("webp");
