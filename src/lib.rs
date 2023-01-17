@@ -168,7 +168,7 @@ fn key(image: &str, resize: &Resize) -> String {
 
 #[derive(thiserror::Error, Debug)]
 #[error("Image not found")]
-struct ImageNotFound;
+pub struct ImageNotFound;
 
 impl From<std::io::Error> for ImageNotFound {
     fn from(_: std::io::Error) -> Self {
